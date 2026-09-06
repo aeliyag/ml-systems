@@ -12,3 +12,13 @@ Course website and other content for the Machine Learning for Computer Systems c
   - `notebooks/` - Jupyter notebooks
   - `book/` - Course book content
   - `syllabus.md` - Course syllabus
+
+## Preview the textbook
+
+From the repo root:
+
+```bash
+./docs/book/serve.sh
+```
+
+That serves the book at http://127.0.0.1:8765/. Open it in Safari. Press Ctrl-C to stop the server.

@@ -1,0 +1,8 @@
+.venv/
+.DS_Store
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Course datasets (clone separately: https://github.com/noise-courses/data)
+completed assignments/data/
