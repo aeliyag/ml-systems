@@ -5,4 +5,8 @@ __pycache__/
 .ipynb_checkpoints/
 
 # Course datasets (clone separately: https://github.com/noise-courses/data)
-completed assignments/data/
+# Ignore large uncompressed dataset files
+completed assignments/data/video-qoe/netflix_dataset.pkl
+completed assignments/data/video-qoe/video_dataset.pkl
+# Ignore other data directories
+completed assignments/data/anomaly-detection/
