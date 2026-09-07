@@ -1,8 +1,8 @@
 # Adaptive Feature Selection for Predicting Video Rebuffering
 
 **Machine Learning for Computer Systems** · Project Proposal · Open Problem / Research  
-**Aeliya Grover** · September 2026 
-**with help from Cursor** 
+**Aeliya Grover, Clarisse Cheung** · September 2026 
+**with help from Cursor and Claude** 
 
 ## Project Summary
 
