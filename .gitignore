@@ -10,3 +10,8 @@ completed assignments/data/video-qoe/netflix_dataset.pkl
 completed assignments/data/video-qoe/video_dataset.pkl
 # Ignore other data directories
 completed assignments/data/anomaly-detection/
+
+# Quarto render artifacts (final project proposal renders to PDF, not HTML)
+final project/project-proposal.html
+final project/project-proposal_files/
+.quarto/
