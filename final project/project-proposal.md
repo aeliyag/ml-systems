@@ -1,4 +1,4 @@
-# Adaptive Feature Selection for Predicting Video Rebuffering
+# Adaptive Feature Selection for Predicting Video Quality Degradation
 
 **Machine Learning for Computer Systems** · Project Proposal · Open Problem / Research  
 **Aeliya Grover, Clarisse Cheung** · September 2026  
@@ -6,45 +6,45 @@
 
 ## Project Summary
 
-When you watch a streaming video, the player keeps a short *buffer* (a stash of upcoming video) so playback can continue if the network briefly slows down. **Rebuffering** is what happens when that stash runs out: playback stalls and you see a spinner. It is one of the most disruptive *quality-of-experience (QoE)* events, meaning it is one of the things users notice and dislike most.
+When you watch a streaming video, the player continuously chooses a *resolution* (how sharp the picture is). When the network slows down, *adaptive bitrate* logic responds by dropping to a lower resolution—a *downswitch*—to keep playback from stalling entirely. A downswitch is both a *quality-of-experience (QoE)* event users notice and the earliest visible sign that a session is in trouble.
 
-Assignment 1 showed that *time-windowed network features*—simple statistics computed from packets over short time intervals, such as how many bytes arrived in the last second—can infer a session’s *current* resolution (how sharp the video is right now). Predicting *upcoming* rebuffering is both harder and more useful: a player or network that flags an at-risk session early can *lower bitrate* (request a smaller, lower-quality video) or reroute traffic before playback stalls.
+Assignment 1 showed that *time-windowed network features*—simple statistics computed from packets over short time intervals, such as how many bytes arrived in the last second—can infer a session's *current* resolution. Predicting an *upcoming* downswitch is both harder and more useful: a player or network that flags an at-risk session early can reroute traffic or adjust before quality drops.
 
-A **feature** is one input number the model uses (for example, recent download speed). Computing a large *feature set* (many such numbers) on every window is expensive in CPU time, and many features add little useful *signal* (information) for a given prediction.
+A **feature** is one input number the model uses. Features differ enormously in what they cost to produce. Counting bytes requires only packet headers. Measuring round-trip time or retransmissions requires tracking *per-flow state*—remembering, for every connection, what has already been sent and acknowledged. Recovering video *chunk* boundaries (the individual pieces a video is downloaded in) requires inferring application structure inside an encrypted stream. These are not small differences, and a system that computes every feature on every session pays for all of them continuously.
 
-**Research question.** Can *adaptive feature selection*—starting with cheap features and adding expensive ones only when needed—reduce the computational cost of video rebuffering prediction while matching the performance of a model that always uses the full feature set?
+**Research question.** Can *adaptive feature selection*—starting with cheap features and computing expensive ones only when needed—reduce the computational cost of predicting video quality degradation while matching the performance of a model that always uses the full feature set?
 
-**In plain terms:** we want a warning system that says “this stream is about to stall,” but we do not want to do heavy math on every session all the time. Easy cases should be cheap; hard cases can spend more compute.
+**In plain terms:** we want a warning system that says "this stream is about to degrade," but we do not want to do expensive work on every session all the time. Easy cases should be cheap; hard cases can spend more compute.
 
-This sits in the course’s suggested open-problem area of *the systems costs of different features*. It matters for real-time video analytics, where predictions must be made quickly and at scale.
+This sits in the course's suggested open-problem area of *the systems costs of different features*. It matters for real-time video analytics, where predictions must be made quickly and at scale.
+
+**Why downswitches and not stalls.** We initially aimed to predict *rebuffering* (playback stalling outright). Inspecting the labels first, we found them too sparse to learn from: rebuffering appears in 2 of 1,000 sessions in the Netflix dataset (14 of 52,279 windows), and the multi-service dataset records no rebuffering at all. Downswitches capture the same underlying network stress at a learnable rate—the player lowers quality precisely to avoid a stall—and occur in 43% of sessions.
 
 ## Data
 
-We will use the Assignment 1 video QoE materials: the Netflix capture and labeled session files in the course data repository (`data/video-qoe/`, `video_dataset.pkl`, `netflix_session.pkl`, and `netflix.pcap`). A `.pcap` file is a *packet capture*: a recording of the raw network traffic. Features will include NetML / SAMP windowed statistics (libraries that turn packets into summary numbers over time) and the segment-download-rate feature from Assignment 1 (how fast each chunk of video is arriving).
+We will use the course video QoE materials: `video_dataset.pkl` (204,713 ten-second windows across 4,000 sessions and four services—Netflix, YouTube, Twitch, and Amazon Prime Video) for modeling, and `netflix.pcap` for cost measurement. A `.pcap` file is a *packet capture*: a recording of the raw network traffic.
 
-The task is a **future-horizon binary prediction**: a yes/no question about a short time window ahead. At time *t*, using only information available so far, predict whether a rebuffering event occurs in *(t, t+Δ]* (for example, the next 10–30 seconds). Labels (the true yes/no answers) will come from available session fields where present, or be derived from buffer and segment-download dynamics: if download rate stays below playback rate long enough to empty the buffer, a stall is coming. We will use a *temporal train/test split*—train on earlier time, test on later time—so that future information cannot *leak* into training (the model must not “cheat” by seeing the future).
+Every feature in this dataset is already tagged by *protocol layer*—how deep into the network stack you must look to compute it—which gives us our cost hierarchy directly:
+
+- **L3** (11 features): throughput, byte and packet counts, parallel flows. Readable from packet headers alone.
+- **L4** (95 features): round-trip time, bytes in flight, retransmissions, receive window. Requires tracking per-flow TCP state across packets.
+- **L7** (55 features): chunk sizes and chunk inter-arrival times. Requires inferring chunk boundaries inside encrypted traffic.
+
+The task is a **future-horizon binary prediction**: a yes/no question about a short time window ahead. At time *t*, using only information available so far, predict whether resolution drops during *(t, t+Δ]* (we sweep Δ from 10 to 30 seconds). Positive cases make up 1.7–3.9% of windows depending on the horizon. We will split the data by *session*, so that no session appears in both training and test data, and additionally report a temporal split—train on earlier sessions, test on later ones—to check for *drift* (the model degrading as conditions change over time).
 
 ## Machine Learning
 
-**Baselines** (simple comparison points). *Random Forest* and *XGBoost* are standard tree-based classifiers: they learn many if-then rules from examples. We will train them on (1) the full feature set and (2) a fixed cheap subset (packet/byte counts and *throughput*—bytes per second—only).
+**Baselines** (simple comparison points). Tree-based classifiers—*random forest* and *gradient boosting*, which learn many if-then rules from examples—trained on the full feature set and on each fixed tier individually. Because a session already at the lowest resolution cannot downswitch, we also train a baseline using *only the current resolution* and report every result as improvement over it; otherwise a high score may reflect nothing but "high quality has room to fall."
 
-**Adaptive method.** A *cascade* (also called sequential acquisition): a cheap-feature classifier runs first and outputs a *probability* (how likely a stall is, from 0 to 1). If that probability is near the *decision boundary* (the cutoff between “stall” and “no stall,” so the model is unsure), the system computes the next most informative feature(s) and reclassifies. Features are acquired in order of expected predictive value relative to measured extraction cost (how long they take to compute). Acquisition stops when *confidence* is high enough (the probability is clearly high or clearly low) or a cost budget is reached.
-
-We will compare the full-feature model, the fixed cheap subset, and the adaptive approach.
+**Adaptive method.** A *cascade* (also called sequential acquisition): a classifier using only L3 features runs first and outputs a *probability* (how likely a downswitch is, from 0 to 1). If that probability sits near the *decision boundary*—the cutoff between "yes" and "no," meaning the model is unsure—the system computes L4 features and reclassifies, and if still unsure, L7. Acquisition stops once *confidence* is high enough or the full feature set is reached. Because these thresholds are compared against probabilities, we *calibrate* each model so its outputs mean what they claim.
 
 ## Evaluation
 
-**Prediction quality.** We will report:
-- **Accuracy:** overall fraction of predictions that are correct.
-- **Precision:** of the sessions we flagged as “about to stall,” how many actually stalled.
-- **Recall:** of the sessions that actually stalled, how many we caught.
-- **F1:** a single score that balances precision and recall.
-- **ROC-AUC:** how well the model ranks stall-likely sessions above safe ones across all cutoffs.
-- A **confusion matrix:** a table of correct vs. incorrect yes/no calls.
+**Prediction quality.** We will report precision (of the windows we flagged, how many really degraded), recall (of the windows that degraded, how many we caught), F1, and a confusion matrix. Our headline metric is **PR-AUC**, which summarizes the precision–recall tradeoff across all cutoffs. Because downswitches are *rare* (*class imbalance*: under 4% of windows), plain accuracy and ROC-AUC both look strong even for a model that catches almost nothing. We report results per service as well as pooled, since services differ in how they adapt. We also measure *lead time*: how many seconds before a downswitch the model first flags the session.
 
-Because rebuffering is likely *rare* (*class imbalance*: many “no stall” examples, few “stall” examples), accuracy alone can look high even if the model never catches stalls. We will report class balance and emphasize recall and F1 on the positive class (stalls). We will also measure *lead time*: how many seconds before a stall the model correctly flags the session.
+**Systems cost.** We measure feature-extraction time for each tier empirically on `netflix.pcap`, then sweep the cascade's confidence threshold to plot prediction quality against cost and identify *operating points*: settings that stay close to full-model performance at substantially lower cost. We additionally model each tier's *time-to-availability* (L7 features cannot exist until chunks have arrived) in order to plot quality against effective warning time; we label this clearly as a cost model rather than a measurement.
 
-**Systems cost.** Features computed per prediction, fraction of windows that *escalate* (go beyond the cheap subset), feature-extraction time, and *inference* time (how long the model takes to answer). We will sweep confidence thresholds to plot the accuracy–cost curve and identify *operating points*: settings that stay close to full-model performance at substantially lower feature cost.
+**Controls.** The cascade is compared against each fixed tier and against *random* escalation at a matched rate. Without that last comparison, a cascade that appears to win may only be showing that more features sometimes help. If a single fixed tier turns out to dominate the adaptive approach on both axes, we report that as our finding.
 
 ## Learning Objective
 
