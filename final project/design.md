@@ -224,3 +224,31 @@ training set.
   so exact agreement is not required — but the distinction is stated wherever L7 cost appears.
 - **A fixed tier may dominate the cascade.** The proposal commits to reporting that outcome if
   it occurs, and this design does not hedge against it.
+
+---
+
+## 11. Merged decisions (September 2026)
+
+The merged submission notebook is [`final-project-merged.ipynb`](final-project-merged.ipynb).
+Side-by-side provenance is in [`COMPARISON.md`](COMPARISON.md). Source snapshots:
+
+- [`final-project-clarisse.ipynb`](final-project-clarisse.ipynb) — commit `066608d`
+- [`final-project-aeliya.ipynb`](final-project-aeliya.ipynb) — Aeliya's independent implementation
+
+| Decision | Merged choice | Primary source |
+|----------|---------------|----------------|
+| Primary Δ | 30s (+ 10s/20s sensitivity) | Clarisse |
+| Train/val/test split | Grouped by `video_id`, 60/20/20 | Clarisse |
+| Label construction | Explicit time-keyed lookup | Clarisse |
+| Cascade order | L3 → L7 → L4 (cost-measured) | Clarisse |
+| Escalation policy | Top-k% uncertainty ranking | Clarisse |
+| Calibration | Isotonic per cascade stage | Clarisse |
+| Hyperparameter tuning | `RandomizedSearchCV` | Clarisse |
+| Cost model | Measured from `netflix.pcap` | Clarisse |
+| Reader documentation | Background & Key Terms section | Aeliya |
+| Figure exports | Saved under `figures/` | Aeliya |
+| Reproducibility tooling | `run_notebook.py`, `build_merged_notebook.py` | Aeliya |
+
+**Validation:** Re-run `final-project-merged.ipynb` (or `run_notebook.py`) in the course
+environment before submission. Figures under `figures/` must be regenerated from the merged
+notebook; do not reuse numbers from either snapshot without re-running on the merged settings.
